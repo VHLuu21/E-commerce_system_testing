@@ -1,0 +1,813 @@
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
+import { Customer } from '../customer/entities/customer.entity.js';
+import { Inventory } from '../inventory/entities/inventory.entity.js';
+import { Payment } from '../payment/entities/payment.entity.js';
+import { PaymentMethod } from '../payment/enums/payment-method.enum.js';
+import { PaymentStatus } from '../payment/enums/payment-status.enum.js';
+import { RecommendationEventPublisherService } from '../recommendation/recommendation-event-publisher.service.js';
+import { Seller } from '../seller/entities/seller.entity.js';
+import { Shop } from '../shop/entities/shop.entity.js';
+import { BehaviorType } from '../user-behavior/enums/behavior-type.enum.js';
+import { UserBehaviorService } from '../user-behavior/user-behavior.service.js';
+import { OrderGroup } from './entities/order-group.entity.js';
+import { OrderItem } from './entities/order-item.entity.js';
+import { Order } from './entities/order.entity.js';
+import { OrderStatus } from './enums/order-status.enum.js';
+
+@Injectable()
+export class OrderService {
+  constructor(
+    @InjectRepository(Customer)
+    private readonly customerRepository: Repository<Customer>,
+    @InjectRepository(OrderGroup)
+    private readonly orderGroupRepository: Repository<OrderGroup>,
+    @InjectRepository(Seller)
+    private readonly sellerRepository: Repository<Seller>,
+    @InjectRepository(Shop)
+    private readonly shopRepository: Repository<Shop>,
+    private readonly dataSource: DataSource,
+    private readonly userBehaviorService: UserBehaviorService,
+    private readonly recommendationEventPublisher: RecommendationEventPublisherService,
+  ) {}
+
+  async getMyOrders(userId: string) {
+    const customer = await this.findCustomerOrFail(userId);
+    const orderGroups = await this.orderGroupRepository
+      .createQueryBuilder('orderGroup')
+      .leftJoinAndSelect('orderGroup.payment', 'payment')
+      .leftJoinAndSelect('orderGroup.orders', 'order')
+      .leftJoinAndSelect('order.shop', 'shop')
+      .leftJoinAndSelect('order.items', 'orderItem')
+      .leftJoinAndSelect('orderItem.product', 'product')
+      .where('orderGroup.customerId = :customerId', {
+        customerId: customer.customerId,
+      })
+      .orderBy('orderGroup.createdAt', 'DESC')
+      .addOrderBy('orderGroup.orderGroupId', 'DESC')
+      .addOrderBy('order.createdAt', 'ASC')
+      .addOrderBy('order.orderId', 'ASC')
+      .addOrderBy('orderItem.orderItemId', 'ASC')
+      .getMany();
+
+    return {
+      data: orderGroups.map((orderGroup) => ({
+        orderGroupId: orderGroup.orderGroupId,
+        shippingFee: orderGroup.shippingFee,
+        shippingDiscountAmount: orderGroup.shippingDiscountAmount,
+        totalAmount: orderGroup.totalAmount,
+        createdAt: orderGroup.createdAt,
+        payment: orderGroup.payment
+          ? {
+              paymentMethod: orderGroup.payment.paymentMethod,
+              status: orderGroup.payment.status,
+              paidAt: orderGroup.payment.paidAt,
+            }
+          : null,
+        orders: (orderGroup.orders ?? []).map((order) => ({
+          orderId: order.orderId,
+          shopId: order.shopId,
+          shopName: order.shop.name,
+          shopLogoUrl: order.shop.logoUrl,
+          totalAmount: order.totalAmount,
+          status: order.status,
+          createdAt: order.createdAt,
+          items: (order.items ?? []).map((orderItem) => ({
+            orderItemId: orderItem.orderItemId,
+            productId: orderItem.productId,
+            productName: orderItem.productName,
+            imageUrl: orderItem.product.imageUrl,
+            quantity: orderItem.quantity,
+            unitPrice: orderItem.unitPrice,
+            subtotal: orderItem.subtotal,
+          })),
+        })),
+      })),
+    };
+  }
+
+  async getMyOrderDetail(userId: string, orderGroupId: string) {
+    const customer = await this.findCustomerOrFail(userId);
+    const orderGroup = await this.orderGroupRepository
+      .createQueryBuilder('orderGroup')
+      .leftJoinAndSelect('orderGroup.payment', 'payment')
+      .leftJoinAndSelect('orderGroup.orders', 'order')
+      .leftJoinAndSelect('order.shop', 'shop')
+      .leftJoinAndSelect('order.items', 'orderItem')
+      .leftJoinAndSelect('orderItem.product', 'product')
+      .leftJoinAndSelect(
+        'order.reviews',
+        'review',
+        'review.customerId = :customerId',
+        { customerId: customer.customerId },
+      )
+      .where('orderGroup.orderGroupId = :orderGroupId', { orderGroupId })
+      .andWhere('orderGroup.customerId = :customerId', {
+        customerId: customer.customerId,
+      })
+      .orderBy('order.createdAt', 'ASC')
+      .addOrderBy('order.orderId', 'ASC')
+      .addOrderBy('orderItem.orderItemId', 'ASC')
+      .getOne();
+
+    if (!orderGroup) {
+      throw new NotFoundException('Order group not found');
+    }
+
+    return {
+      orderGroupId: orderGroup.orderGroupId,
+      ...this.buildOrderGroupFinancialSummary(orderGroup),
+      totalAmount: orderGroup.totalAmount,
+      createdAt: orderGroup.createdAt,
+      payment: orderGroup.payment
+        ? {
+            paymentId: orderGroup.payment.paymentId,
+            paymentMethod: orderGroup.payment.paymentMethod,
+            amount: orderGroup.payment.amount,
+            status: orderGroup.payment.status,
+            paidAt: orderGroup.payment.paidAt,
+          }
+        : null,
+      orders: (orderGroup.orders ?? []).map((order) => {
+        const reviewsByProductId = new Map(
+          (order.reviews ?? []).map((review) => [review.productId, review]),
+        );
+
+        return {
+          orderId: order.orderId,
+          shopId: order.shopId,
+          shopName: order.shop.name,
+          subtotal: order.subtotal,
+          discountAmount: order.discountAmount,
+          totalAmount: order.totalAmount,
+          shippingAddress: order.shippingAddress,
+          shippingMethod: order.shippingMethod,
+          status: order.status,
+          createdAt: order.createdAt,
+          items: (order.items ?? []).map((orderItem) => {
+            const review = reviewsByProductId.get(orderItem.productId);
+
+            return {
+              orderItemId: orderItem.orderItemId,
+              productId: orderItem.productId,
+              productName: orderItem.productName,
+              imageUrl: orderItem.product.imageUrl,
+              quantity: orderItem.quantity,
+              unitPrice: orderItem.unitPrice,
+              subtotal: orderItem.subtotal,
+              review: review
+                ? {
+                    reviewId: review.reviewId,
+                    rating: review.rating,
+                    comment: review.comment,
+                    status: review.status,
+                    createdAt: review.createdAt,
+                    updatedAt: review.updatedAt,
+                  }
+                : null,
+            };
+          }),
+        };
+      }),
+    };
+  }
+
+  async getSellerOrders(userId: string) {
+    const shop = await this.findSellerShop(userId);
+    const orders = await this.dataSource.getRepository(Order).find({
+      where: { shopId: shop.shopId },
+      order: { createdAt: 'DESC', orderId: 'DESC' },
+    });
+
+    return {
+      data: orders.map((order) => this.buildSellerOrderResponse(order)),
+    };
+  }
+
+  async getSellerOrderDetail(userId: string, orderId: string) {
+    const shop = await this.findSellerShop(userId);
+    const order = await this.dataSource
+      .getRepository(Order)
+      .createQueryBuilder('order')
+      .leftJoinAndSelect('order.items', 'orderItem')
+      .leftJoinAndSelect('orderItem.product', 'product')
+      .leftJoinAndSelect('order.orderGroup', 'orderGroup')
+      .leftJoinAndSelect('orderGroup.payment', 'payment')
+      .where('order.orderId = :orderId', { orderId })
+      .andWhere('order.shopId = :shopId', { shopId: shop.shopId })
+      .orderBy('orderItem.orderItemId', 'ASC')
+      .getOne();
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return {
+      ...this.buildSellerOrderResponse(order),
+      items: (order.items ?? []).map((orderItem) => ({
+        orderItemId: orderItem.orderItemId,
+        productId: orderItem.productId,
+        productName: orderItem.productName,
+        imageUrl: orderItem.product.imageUrl,
+        quantity: orderItem.quantity,
+        unitPrice: orderItem.unitPrice,
+        subtotal: orderItem.subtotal,
+      })),
+      payment: order.orderGroup.payment
+        ? {
+            paymentId: order.orderGroup.payment.paymentId,
+            paymentMethod: order.orderGroup.payment.paymentMethod,
+            amount: order.orderGroup.payment.amount,
+            status: order.orderGroup.payment.status,
+            paidAt: order.orderGroup.payment.paidAt,
+          }
+        : null,
+    };
+  }
+
+  async cancelMyOrder(userId: string, orderId: string) {
+    return this.dataSource.transaction(async (manager) => {
+      const customer = await manager
+        .getRepository(Customer)
+        .findOneBy({ userId });
+
+      if (!customer) {
+        throw new NotFoundException('Customer profile not found');
+      }
+
+      const order = await manager
+        .getRepository(Order)
+        .createQueryBuilder('order')
+        .innerJoin('order.orderGroup', 'orderGroup')
+        .setLock('pessimistic_write')
+        .where('order.orderId = :orderId', { orderId })
+        .andWhere('orderGroup.customerId = :customerId', {
+          customerId: customer.customerId,
+        })
+        .getOne();
+
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
+
+      const cancelledOrder = await this.cancelPendingOrder(manager, order);
+
+      return {
+        orderId: cancelledOrder.orderId,
+        status: cancelledOrder.status,
+        updatedAt: cancelledOrder.updatedAt,
+        message: 'Order cancelled successfully',
+      };
+    });
+  }
+
+  async confirmOrderReceived(userId: string, orderId: string) {
+    const completion = await this.dataSource.transaction(async (manager) => {
+      const customer = await manager.getRepository(Customer).findOneBy({
+        userId,
+      });
+
+      if (!customer) {
+        throw new NotFoundException('Customer profile not found');
+      }
+
+      const order = await manager
+        .getRepository(Order)
+        .createQueryBuilder('order')
+        .innerJoin('order.orderGroup', 'orderGroup')
+        .setLock('pessimistic_write')
+        .where('order.orderId = :orderId', { orderId })
+        .andWhere('orderGroup.customerId = :customerId', {
+          customerId: customer.customerId,
+        })
+        .getOne();
+
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
+
+      if (order.status !== OrderStatus.SHIPPING) {
+        throw new ConflictException(
+          'Only shipping orders can be confirmed as received',
+        );
+      }
+
+      const orderItems = await this.findOrderItems(manager, order.orderId);
+      order.status = OrderStatus.COMPLETED;
+      const completedOrder = await manager.getRepository(Order).save(order);
+
+      await this.lockOrderGroup(manager, order.orderGroupId);
+      const payment = await this.lockPayment(manager, order.orderGroupId);
+      await this.completeCodPaymentIfEligible(
+        manager,
+        order.orderGroupId,
+        payment,
+      );
+
+      return {
+        customerId: customer.customerId,
+        orderItems: orderItems.map((orderItem) => ({
+          productId: orderItem.productId,
+          quantity: orderItem.quantity,
+          unitPrice: orderItem.unitPrice,
+        })),
+        response: this.buildOrderStatusResponse(
+          completedOrder,
+          'Order receipt confirmed successfully',
+        ),
+      };
+    });
+
+    await Promise.all(
+      completion.orderItems.map(async (orderItem) => {
+        const behavior = await this.userBehaviorService.recordBehavior(
+          completion.customerId,
+          orderItem.productId,
+          BehaviorType.PURCHASE,
+        );
+
+        if (behavior) {
+          await this.recommendationEventPublisher.publishBehavior(behavior, {
+            quantity: orderItem.quantity,
+            unitPrice: orderItem.unitPrice,
+          });
+        }
+      }),
+    );
+
+    return completion.response;
+  }
+
+  async confirmOrder(userId: string, orderId: string) {
+    return this.dataSource.transaction(async (manager) => {
+      const shop = await this.findSellerShopInTransaction(manager, userId);
+      const order = await this.findAndLockSellerOrder(
+        manager,
+        orderId,
+        shop.shopId,
+      );
+
+      if (order.status !== OrderStatus.PENDING) {
+        throw new ConflictException(
+          'Order must be PENDING to change to CONFIRMED',
+        );
+      }
+
+      await this.lockOrderGroup(manager, order.orderGroupId);
+      const payment = await this.lockPayment(manager, order.orderGroupId);
+      this.validatePaymentReadyForConfirmation(payment);
+
+      order.status = OrderStatus.CONFIRMED;
+      const confirmedOrder = await manager.getRepository(Order).save(order);
+
+      return this.buildOrderStatusResponse(
+        confirmedOrder,
+        'Order confirmed successfully',
+      );
+    });
+  }
+
+  async startShipping(userId: string, orderId: string) {
+    return this.transitionSellerOrder(
+      userId,
+      orderId,
+      OrderStatus.CONFIRMED,
+      OrderStatus.SHIPPING,
+      'Order shipping started successfully',
+    );
+  }
+
+  async cancelOrderBySeller(userId: string, orderId: string) {
+    return this.dataSource.transaction(async (manager) => {
+      const shop = await this.findSellerShopInTransaction(manager, userId);
+      const order = await this.findAndLockSellerOrder(
+        manager,
+        orderId,
+        shop.shopId,
+      );
+
+      const cancelledOrder = await this.cancelPendingOrder(manager, order);
+
+      return this.buildOrderStatusResponse(
+        cancelledOrder,
+        'Order cancelled successfully',
+      );
+    });
+  }
+
+  private async transitionSellerOrder(
+    userId: string,
+    orderId: string,
+    expectedStatus: OrderStatus,
+    nextStatus: OrderStatus,
+    successMessage: string,
+  ) {
+    return this.dataSource.transaction(async (manager) => {
+      const shop = await this.findSellerShopInTransaction(manager, userId);
+      const order = await this.findAndLockSellerOrder(
+        manager,
+        orderId,
+        shop.shopId,
+      );
+
+      if (order.status !== expectedStatus) {
+        throw new ConflictException(
+          `Order must be ${expectedStatus} to change to ${nextStatus}`,
+        );
+      }
+
+      order.status = nextStatus;
+      const savedOrder = await manager.getRepository(Order).save(order);
+
+      return this.buildOrderStatusResponse(savedOrder, successMessage);
+    });
+  }
+
+  private async findSellerShop(userId: string): Promise<Shop> {
+    const seller = await this.sellerRepository.findOneBy({ userId });
+
+    if (!seller) {
+      throw new NotFoundException('Seller profile not found');
+    }
+
+    const shop = await this.shopRepository.findOneBy({
+      sellerId: seller.sellerId,
+    });
+
+    if (!shop) {
+      throw new NotFoundException('Shop not found');
+    }
+
+    return shop;
+  }
+
+  private async findSellerShopInTransaction(
+    manager: EntityManager,
+    userId: string,
+  ): Promise<Shop> {
+    const seller = await manager.getRepository(Seller).findOneBy({ userId });
+
+    if (!seller) {
+      throw new NotFoundException('Seller profile not found');
+    }
+
+    const shop = await manager.getRepository(Shop).findOneBy({
+      sellerId: seller.sellerId,
+    });
+
+    if (!shop) {
+      throw new NotFoundException('Shop not found');
+    }
+
+    return shop;
+  }
+
+  private async findAndLockSellerOrder(
+    manager: EntityManager,
+    orderId: string,
+    shopId: string,
+  ): Promise<Order> {
+    const order = await manager
+      .getRepository(Order)
+      .createQueryBuilder('order')
+      .setLock('pessimistic_write')
+      .where('order.orderId = :orderId', { orderId })
+      .andWhere('order.shopId = :shopId', { shopId })
+      .getOne();
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return order;
+  }
+
+  private async findOrderItems(
+    manager: EntityManager,
+    orderId: string,
+  ): Promise<OrderItem[]> {
+    const orderItems = await manager.getRepository(OrderItem).find({
+      where: { orderId },
+      order: { productId: 'ASC', orderItemId: 'ASC' },
+    });
+
+    if (orderItems.length === 0) {
+      throw new ConflictException('Order inventory data is inconsistent');
+    }
+
+    return orderItems;
+  }
+
+  private async cancelPendingOrder(
+    manager: EntityManager,
+    order: Order,
+  ): Promise<Order> {
+    const orderGroup = await this.lockOrderGroup(manager, order.orderGroupId);
+    const payment = await this.lockPayment(manager, order.orderGroupId);
+
+    if (order.status !== OrderStatus.PENDING) {
+      throw new ConflictException('Only pending orders can be cancelled');
+    }
+
+    const orderItems = await this.findOrderItems(manager, order.orderId);
+    await this.updateInventoryForFinalStatus(manager, orderItems, false);
+
+    order.status = OrderStatus.CANCELLED;
+    const cancelledOrder = await manager.getRepository(Order).save(order);
+
+    await this.recalculateOrderGroupAfterCancellation(
+      manager,
+      orderGroup,
+      payment,
+    );
+    await this.completeCodPaymentIfEligible(
+      manager,
+      order.orderGroupId,
+      payment,
+    );
+
+    return cancelledOrder;
+  }
+
+  private async completeCodPaymentIfEligible(
+    manager: EntityManager,
+    orderGroupId: string,
+    payment: Payment | null,
+  ): Promise<void> {
+    if (
+      !payment ||
+      payment.paymentMethod !== PaymentMethod.COD ||
+      payment.status !== PaymentStatus.PENDING
+    ) {
+      return;
+    }
+
+    const orders = await manager.getRepository(Order).find({
+      select: {
+        orderId: true,
+        status: true,
+      },
+      where: { orderGroupId },
+    });
+    const activeOrders = orders.filter(
+      (order) => order.status !== OrderStatus.CANCELLED,
+    );
+
+    if (
+      activeOrders.length === 0 ||
+      activeOrders.some((order) => order.status !== OrderStatus.COMPLETED)
+    ) {
+      return;
+    }
+
+    payment.status = PaymentStatus.PAID;
+    payment.paidAt = new Date();
+    await manager.getRepository(Payment).save(payment);
+  }
+
+  private async lockOrderGroup(
+    manager: EntityManager,
+    orderGroupId: string,
+  ): Promise<OrderGroup> {
+    const orderGroup = await manager
+      .getRepository(OrderGroup)
+      .createQueryBuilder('orderGroup')
+      .setLock('pessimistic_write')
+      .where('orderGroup.orderGroupId = :orderGroupId', { orderGroupId })
+      .getOne();
+
+    if (!orderGroup) {
+      throw new ConflictException('Order group data is inconsistent');
+    }
+
+    return orderGroup;
+  }
+
+  private async lockPayment(
+    manager: EntityManager,
+    orderGroupId: string,
+  ): Promise<Payment | null> {
+    return manager
+      .getRepository(Payment)
+      .createQueryBuilder('payment')
+      .setLock('pessimistic_write')
+      .where('payment.orderGroupId = :orderGroupId', { orderGroupId })
+      .getOne();
+  }
+
+  private validatePaymentReadyForConfirmation(payment: Payment | null): void {
+    if (!payment) {
+      throw new ConflictException(
+        'Payment must be created before confirming the order',
+      );
+    }
+
+    const isCodPending =
+      payment.paymentMethod === PaymentMethod.COD &&
+      payment.status === PaymentStatus.PENDING;
+    const isOnlinePaid =
+      payment.paymentMethod === PaymentMethod.ONLINE &&
+      payment.status === PaymentStatus.PAID;
+    const isZeroValuePaid =
+      payment.status === PaymentStatus.PAID &&
+      this.isZeroAmount(payment.amount);
+
+    if (!isCodPending && !isOnlinePaid && !isZeroValuePaid) {
+      throw new ConflictException(
+        'Payment is not ready for order confirmation',
+      );
+    }
+  }
+
+  private async recalculateOrderGroupAfterCancellation(
+    manager: EntityManager,
+    orderGroup: OrderGroup,
+    payment: Payment | null,
+  ): Promise<void> {
+    const activeOrderSummary = await manager
+      .getRepository(Order)
+      .createQueryBuilder('order')
+      .select(
+        'COALESCE(SUM("order"."total_amount"), 0)::numeric(14, 2)',
+        'productTotal',
+      )
+      .addSelect('COUNT("order"."order_id")::int', 'activeOrderCount')
+      .where('order.orderGroupId = :orderGroupId', {
+        orderGroupId: orderGroup.orderGroupId,
+      })
+      .andWhere('order.status != :cancelledStatus', {
+        cancelledStatus: OrderStatus.CANCELLED,
+      })
+      .getRawOne<{ productTotal: string; activeOrderCount: number | string }>();
+
+    const activeOrderCount = Number(activeOrderSummary?.activeOrderCount ?? 0);
+
+    if (activeOrderCount === 0) {
+      orderGroup.totalAmount = '0.00';
+    } else {
+      const totalInCents =
+        this.priceToCents(activeOrderSummary?.productTotal ?? '0.00') +
+        this.priceToCents(orderGroup.shippingFee) -
+        this.priceToCents(orderGroup.shippingDiscountAmount);
+      orderGroup.totalAmount = this.formatCents(
+        totalInCents < 0n ? 0n : totalInCents,
+      );
+    }
+    await manager.getRepository(OrderGroup).save(orderGroup);
+
+    if (
+      payment?.paymentMethod === PaymentMethod.COD &&
+      payment.status === PaymentStatus.PENDING
+    ) {
+      payment.amount = orderGroup.totalAmount;
+      await manager.getRepository(Payment).save(payment);
+    }
+  }
+
+  private async updateInventoryForFinalStatus(
+    manager: EntityManager,
+    orderItems: OrderItem[],
+    deductQuantity: boolean,
+  ): Promise<void> {
+    if (orderItems.length === 0) {
+      throw new ConflictException('Order inventory data is inconsistent');
+    }
+
+    const quantitiesByProductId = this.sumQuantitiesByProduct(orderItems);
+    const inventoriesByProductId = await this.lockInventories(
+      manager,
+      Array.from(quantitiesByProductId.keys()),
+    );
+
+    for (const [productId, orderQuantity] of quantitiesByProductId) {
+      const inventory = inventoriesByProductId.get(productId);
+
+      if (
+        !inventory ||
+        inventory.reservedQuantity < orderQuantity ||
+        (deductQuantity && inventory.quantity < orderQuantity)
+      ) {
+        throw new ConflictException('Order inventory data is inconsistent');
+      }
+
+      inventory.reservedQuantity -= orderQuantity;
+
+      if (deductQuantity) {
+        inventory.quantity -= orderQuantity;
+      }
+    }
+
+    await manager
+      .getRepository(Inventory)
+      .save(Array.from(inventoriesByProductId.values()));
+  }
+
+  private buildSellerOrderResponse(order: Order) {
+    return {
+      orderId: order.orderId,
+      orderGroupId: order.orderGroupId,
+      subtotal: order.subtotal,
+      discountAmount: order.discountAmount,
+      totalAmount: order.totalAmount,
+      shippingAddress: order.shippingAddress,
+      shippingMethod: order.shippingMethod,
+      status: order.status,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    };
+  }
+
+  private buildOrderStatusResponse(order: Order, message: string) {
+    return {
+      orderId: order.orderId,
+      status: order.status,
+      updatedAt: order.updatedAt,
+      message,
+    };
+  }
+
+  private sumQuantitiesByProduct(orderItems: OrderItem[]): Map<string, number> {
+    const quantitiesByProductId = new Map<string, number>();
+
+    for (const orderItem of orderItems) {
+      quantitiesByProductId.set(
+        orderItem.productId,
+        (quantitiesByProductId.get(orderItem.productId) ?? 0) +
+          orderItem.quantity,
+      );
+    }
+
+    return quantitiesByProductId;
+  }
+
+  private isZeroAmount(amount: string): boolean {
+    return /^0+(?:\.0+)?$/.test(amount.trim());
+  }
+
+  private buildOrderGroupFinancialSummary(orderGroup: OrderGroup) {
+    const orders = (orderGroup.orders ?? []).filter(
+      (order) => order.status !== OrderStatus.CANCELLED,
+    );
+    const subtotalInCents = orders.reduce(
+      (total, order) => total + this.priceToCents(order.subtotal),
+      0n,
+    );
+    const productDiscountInCents = orders.reduce(
+      (total, order) => total + this.priceToCents(order.discountAmount),
+      0n,
+    );
+
+    return {
+      subtotal: this.formatCents(subtotalInCents),
+      productDiscountAmount: this.formatCents(productDiscountInCents),
+      shippingFee: orderGroup.shippingFee,
+      shippingDiscountAmount: orderGroup.shippingDiscountAmount,
+    };
+  }
+
+  private priceToCents(amount: string): bigint {
+    const [wholePart, fractionPart = ''] = amount.split('.');
+    return BigInt(wholePart) * 100n + BigInt(fractionPart.padEnd(2, '0'));
+  }
+
+  private formatCents(value: bigint): string {
+    return `${value / 100n}.${(value % 100n).toString().padStart(2, '0')}`;
+  }
+
+  private async lockInventories(
+    manager: EntityManager,
+    productIds: string[],
+  ): Promise<Map<string, Inventory>> {
+    const sortedProductIds = [...productIds].sort((left, right) =>
+      BigInt(left) < BigInt(right) ? -1 : BigInt(left) > BigInt(right) ? 1 : 0,
+    );
+    const inventories = await manager
+      .getRepository(Inventory)
+      .createQueryBuilder('inventory')
+      .setLock('pessimistic_write')
+      .where('inventory.productId IN (:...productIds)', {
+        productIds: sortedProductIds,
+      })
+      .orderBy('inventory.productId', 'ASC')
+      .getMany();
+
+    return new Map(
+      inventories.map((inventory) => [inventory.productId, inventory]),
+    );
+  }
+
+  private async findCustomerOrFail(userId: string): Promise<Customer> {
+    const customer = await this.customerRepository.findOneBy({ userId });
+
+    if (!customer) {
+      throw new NotFoundException('Customer profile not found');
+    }
+
+    return customer;
+  }
+}
