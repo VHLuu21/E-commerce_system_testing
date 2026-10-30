@@ -2,7 +2,7 @@
 
 # MarketNest
 
-### A Multi-Vendor E-Commerce Platform with an Integrated Recommendation System
+### Nền tảng Thương mại Điện tử Đa Người bán (Multi-Vendor E-Commerce Platform)
 
 [![React](https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
@@ -10,558 +10,636 @@
 [![NestJS](https://img.shields.io/badge/NestJS-12-E0234E?logo=nestjs&logoColor=white)](https://nestjs.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![TypeORM](https://img.shields.io/badge/TypeORM-1.1-FE0803?logo=typeorm&logoColor=white)](https://typeorm.io/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Apache Kafka](https://img.shields.io/badge/Apache_Kafka-3.8-231F20?logo=apachekafka&logoColor=white)](https://kafka.apache.org/)
-[![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io/)
-[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Vitest](https://img.shields.io/badge/Vitest-4.1-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Playwright](https://img.shields.io/badge/Playwright-1.50-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
+[![Postman](https://img.shields.io/badge/Postman-API_Testing-FF6C37?logo=postman&logoColor=white)](https://www.postman.com/)
+[![Apache JMeter](https://img.shields.io/badge/Apache_JMeter-Load_Testing-D22128?logo=apachejmeter&logoColor=white)](https://jmeter.apache.org/)
 
 </div>
 
-## Overview
+---
 
-MarketNest is a full-stack, multi-vendor marketplace. It combines a React storefront and role-specific management experiences with a NestJS commerce API, PostgreSQL persistence, and a separately deployable FastAPI recommendation engine.
+## Mục lục
 
-Customers can browse and search the public catalog, visit shops, manage a wishlist and cart, complete checkout, track or cancel eligible orders, confirm delivery, submit reviews, and discover personalized or similar products. Sellers can register and manage a shop, products and inventory, process orders, inspect sales statistics, and reply to reviews. Administrators manage users, shops, categories, product approvals, discounts, shipping configuration and marketplace activity, and can synchronize the live catalog with the recommendation service.
+- [Phần 1: Kiến trúc hệ thống (System Architecture)](#phần-1-kiến-trúc-hệ-thống-system-architecture)
+  - [1. Tổng quan hệ thống](#1-tổng-quan-hệ-thống)
+  - [2. Sơ đồ kiến trúc tổng thể](#2-sơ-đồ-kiến-trúc-tổng-thể)
+  - [3. Công nghệ sử dụng (Technology Stack)](#3-công-nghệ-sử-dụng-technology-stack)
+  - [4. Mô hình dữ liệu và thực thể nghiệp vụ (Domain Entities)](#4-mô-hình-dữ-liệu-và-thực-thể-nghiệp-vụ-domain-entities)
+  - [5. Luồng xử lý nghiệp vụ cốt lõi (Core Business Workflows)](#5-luồng-xử-lý-nghiệp-vụ-cốt-lõi-core-business-workflows)
+  - [6. Cấu trúc thư mục dự án (Project Directory Structure)](#6-cấu-trúc-thư-mục-dự-án-project-directory-structure)
+  - [7. Hướng dẫn cài đặt và khởi chạy (Installation & Setup)](#7-hướng-dẫn-cài-đặt-và-khởi-chạy-installation--setup)
+- [Phần 2: Kiểm thử hệ thống (Testing)](#phần-2-kiểm-thử-hệ-thống-testing)
+  - [1. Chiến lược và mô hình kiểm thử (Testing Strategy)](#1-chiến-lược-và-mô-hình-kiểm-thử-testing-strategy)
+  - [2. Kiểm thử đơn vị (Unit Testing) với Vitest](#2-kiểm-thử-đơn-vị-unit-testing-với-vitest)
+  - [3. Kiểm thử API (API Testing) với Postman](#3-kiểm-thử-api-api-testing-với-postman)
+  - [4. Kiểm thử tự động đầu-cuối (End-to-End UI Testing) với Playwright](#4-kiểm-thử-tự-động-đầu-cuối-end-to-end-ui-testing-với-playwright)
+  - [5. Kiểm thử hiệu năng và tải (Performance & Load Testing) với Apache JMeter](#5-kiểm-thử-hiệu-năng-và-tải-performance--load-testing-với-apache-jmeter)
+  - [6. Tổng hợp lệnh chạy kiểm thử (Quick Test Commands)](#6-tổng-hợp-lệnh-chạy-kiểm-thử-quick-test-commands)
 
-The NestJS backend remains the source of truth for identity, catalog visibility, inventory, pricing and transactions. The recommendation service ranks candidate product IDs; the backend then hydrates and validates those products before returning them to the frontend.
+---
 
-## Key Features
+# Phần 1: Kiến trúc hệ thống (System Architecture)
 
-### Customer
+## 1. Tổng quan hệ thống
 
-- Customer registration, JWT authentication and profile management
-- Public product browsing, search, category pages and shop pages
-- Product details, stock visibility, product reviews and seller replies
-- Wishlist and quantity-aware cart management
-- Partial cart checkout, shipping calculation, discounts and payment selection
-- Grouped order history, order details, eligible cancellation and delivery confirmation
-- Review creation and editing for eligible purchased products
-- Personalized recommendations and similar-product discovery
+**MarketNest** là hệ thống thương mại điện tử đa người bán (Multi-Vendor E-Commerce Platform) được xây dựng theo kiến trúc phân tầng hiện đại (Layered Architecture). Hệ thống cung cấp đầy đủ các cổng giao tiếp và chức năng cho 3 nhóm đối tượng người dùng chính:
 
-### Seller
+- **Khách hàng (Customer):** Đăng ký/đăng nhập, tìm kiếm và duyệt danh mục sản phẩm, quản lý giỏ hàng và danh sách yêu thích (Wishlist), đặt hàng (Checkout) hỗ trợ gom đơn từ nhiều người bán, theo dõi trạng thái đơn hàng, xác nhận nhận hàng và đánh giá sản phẩm.
+- **Người bán (Seller):** Đăng ký mở gian hàng (Shop), quản lý thông tin cửa hàng, tạo và quản lý sản phẩm, quản lý tồn kho (Inventory), tiếp nhận và xử lý đơn hàng (xác nhận, giao hàng), phản hồi đánh giá của khách hàng và xem thống kê doanh thu.
+- **Quản trị viên (Admin):** Quản lý toàn bộ người dùng, phê duyệt/từ chối gian hàng, kiểm duyệt sản phẩm đăng bán, quản lý danh mục (Categories), cấu hình mã giảm giá (Discounts), phí vận chuyển (Shipping configuration) và giám sát toàn bộ hoạt động giao dịch trên sàn.
 
-- Seller registration, profile and shop lifecycle management
-- Product creation, editing, resubmission and inventory updates
-- Order processing from confirmation through shipping and completion
-- Revenue, product and order statistics
-- Review management with seller replies
+## 2. Sơ đồ kiến trúc tổng thể
 
-### Admin
-
-- User inspection, activation and deactivation
-- Shop approval, rejection, suspension and reactivation
-- Product approval and rejection, including bulk approval operations
-- Category, discount and shipping-fee configuration
-- Marketplace order monitoring and statistics
-- Manual recommendation catalog synchronization
-
-### Recommendation System
-
-- Authenticated personalized recommendations
-- Public similar-product recommendations
-- Hybrid ranking with implicit ALS, content similarity and trending signals
-- Cold-start handling for users with limited or no interaction history
-- Kafka-backed event ingestion with local buffering when the broker is unavailable
-- Redis response caching and Prometheus-compatible metrics
-- Parquet-based catalog and interaction datasets
-- Offline evaluation gate before model promotion
-- NestJS database fallbacks when the recommendation provider is unavailable
-
-## System Architecture
-
-The browser communicates only with the NestJS API. It does not call FastAPI directly. NestJS owns authentication and commerce policy, while FastAPI provides ranking and similarity candidates.
+Hệ thống được thiết kế theo mô hình Client - Server với cơ chế bảo mật xác thực bằng JWT (JSON Web Tokens) và phân quyền theo vai trò (Role-Based Access Control - RBAC).
 
 ```mermaid
-flowchart LR
-    U[Customer / Seller / Admin] --> FE[React + Vite frontend]
-    FE -->|HTTP / JWT| API[NestJS backend]
-    API -->|TypeORM| DB[(PostgreSQL)]
-    API -->|recommendation requests| REC[FastAPI recommendation API]
-    REC --> CACHE[(Redis)]
-    API -->|POST /events| REC
-    REC -->|publish| KAFKA[(Apache Kafka)]
-    KAFKA --> CONSUMER[Recommendation consumer]
-    CONSUMER --> INTERACTIONS[(interactions.parquet)]
-    INTERACTIONS --> TRAIN[ALS training]
-    TRAIN --> EVAL[Offline evaluation gate]
-    EVAL -->|pass: promote| MODELS[(Versioned model artifacts)]
-    MODELS --> REC
-    API -->|Admin catalog sync| REC
-    REC --> CATALOG[(items.parquet)]
+flowchart TB
+    subgraph Client_Layer ["Presentation Layer (Frontend)"]
+        CustomerUI["Customer Portal<br/>(Storefront, Cart, Checkout)"]
+        SellerUI["Seller Dashboard<br/>(Shop, Inventory, Orders)"]
+        AdminUI["Admin Control Panel<br/>(Approvals, Categories, Configs)"]
+    end
+
+    subgraph Gateway_Auth ["API & Authentication"]
+        HTTPGateway["HTTP / REST API Router"]
+        Guards["Guards & Middleware<br/>(JwtAuthGuard, RolesGuard, ValidationPipe)"]
+    end
+
+    subgraph Service_Layer ["Application & Business Logic (NestJS)"]
+        AuthMod["Auth Module<br/>(JWT, Passport, Bcrypt)"]
+        ProductMod["Product & Shop Module<br/>(Catalog, Approval)"]
+        CartMod["Cart & Wishlist Module<br/>(Items, Quantities)"]
+        CheckoutMod["Checkout Module<br/>(Discounts, Shipping, Money Allocation)"]
+        OrderMod["Order Module<br/>(OrderGroup, State Transitions)"]
+        ReviewMod["Review Module<br/>(Ratings, Seller Replies)"]
+        AdminMod["Admin Module<br/>(System Governance)"]
+    end
+
+    subgraph Data_Layer ["Persistence Layer (PostgreSQL)"]
+        TypeORM["TypeORM Data Access / Migrations"]
+        PostgresDB[("PostgreSQL Database<br/>(Tables, Foreign Keys, Indexes)")]
+    end
+
+    CustomerUI -->|HTTP / JSON / JWT| HTTPGateway
+    SellerUI -->|HTTP / JSON / JWT| HTTPGateway
+    AdminUI -->|HTTP / JSON / JWT| HTTPGateway
+
+    HTTPGateway --> Guards
+    Guards --> AuthMod
+    Guards --> ProductMod
+    Guards --> CartMod
+    Guards --> CheckoutMod
+    Guards --> OrderMod
+    Guards --> ReviewMod
+    Guards --> AdminMod
+
+    AuthMod --> TypeORM
+    ProductMod --> TypeORM
+    CartMod --> TypeORM
+    CheckoutMod --> TypeORM
+    OrderMod --> TypeORM
+    ReviewMod --> TypeORM
+    AdminMod --> TypeORM
+
+    TypeORM --> PostgresDB
 ```
 
-### Core application flow
+### Kiến trúc phân tầng (3-Tier Layered Architecture)
+
+1. **Presentation Layer (Frontend - React & Vite):**
+   - Đảm nhận toàn bộ giao diện người dùng và trải nghiệm người dùng (SPA).
+   - Quản lý trạng thái xác thực phiên làm việc thông qua React Context (`AuthContext`).
+   - Giao tiếp với backend thông qua Axios client có tích hợp Interceptors tự động đính kèm Bearer JWT Token vào Header của mỗi request.
+2. **Business Logic Layer (Backend - NestJS):**
+   - Đóng vai trò là trung tâm xử lý toàn bộ logic nghiệp vụ (Single Source of Truth).
+   - Thiết kế dạng Modular: Mỗi miền nghiệp vụ (Auth, User, Product, Shop, Cart, Checkout, Order, Review, Admin) được đóng gói trong một Module độc lập với Controller, Service và Entity riêng biệt.
+   - Bảo mật & Kiểm soát truy cập: Tích hợp `JwtAuthGuard`, `RolesGuard` (`CUSTOMER`, `SELLER`, `ADMIN`), và `ValidationPipe` (sử dụng `class-validator` và `class-transformer` để kiểm tra tính hợp lệ của DTO).
+   - Xử lý giao dịch an toàn (ACID Transactions): Các nghiệp vụ thanh toán, trừ tồn kho và tạo đơn hàng đều chạy trong Database Transaction để chống thất thoát và sai lệch dữ liệu.
+3. **Data Persistence Layer (Database - PostgreSQL & TypeORM):**
+   - Sử dụng hệ quản trị cơ sở dữ liệu quan hệ PostgreSQL với các ràng buộc khóa ngoại (Foreign Keys), khóa chính (Primary Keys), ràng buộc duy nhất (Unique Constraints) và chỉ mục (Indexes).
+   - Quản lý lược đồ dữ liệu bằng TypeORM Migrations phiên bản hóa, nghiêm cấm dùng `synchronize: true` trên môi trường vận hành thực tế.
+
+## 3. Công nghệ sử dụng (Technology Stack)
+
+| Thành phần | Công nghệ / Thư viện | Mô tả |
+| :--- | :--- | :--- |
+| **Frontend** | React 19, TypeScript 6, Vite 8 | Xây dựng giao diện Single Page Application hiện đại, tốc độ cao |
+| | React Router DOM v7 | Quản lý định tuyến và bảo vệ route theo vai trò (Protected Routes) |
+| | Axios | Xử lý các HTTP Request và Interceptor quản lý token |
+| **Backend** | NestJS 12, Node.js (ESM) | Framework backend theo kiến trúc Module, Dependency Injection mạnh mẽ |
+| | TypeORM 1.1 | Object-Relational Mapping (ORM) cho cơ sở dữ liệu quan hệ |
+| | Passport & Passport-JWT | Cơ chế xác thực phân tán dựa trên JSON Web Token |
+| | Bcrypt | Mã hóa mật khẩu bảo mật một chiều |
+| | class-validator & class-transformer | Kiểm thực dữ liệu đầu vào (DTO validation) tự động |
+| **Database** | PostgreSQL | Hệ quản trị cơ sở dữ liệu quan hệ tin cậy, hỗ trợ giao dịch ACID |
+| **DevOps & Testing** | Docker, Docker Compose | Đóng gói và chuẩn hóa môi trường triển khai |
+| | Vitest 4 | Khung kiểm thử đơn vị (Unit Testing) tốc độ cao |
+| | Playwright 1.50 (Python) | Tự động hóa kiểm thử giao diện đầu-cuối (E2E UI Testing) |
+| | Postman | Kiểm thử chức năng và tích hợp REST API |
+| | Apache JMeter | Kiểm thử hiệu năng, độ chịu tải và thông lượng hệ thống |
+
+## 4. Mô hình dữ liệu và thực thể nghiệp vụ (Domain Entities)
+
+Hệ thống quản lý dữ liệu trên PostgreSQL với các nhóm thực thể chính:
+
+- **Identity & Access Management:**
+  - `User`: Tài khoản đăng nhập hệ thống (email, mật khẩu băm, vai trò `role`: CUSTOMER, SELLER, ADMIN, trạng thái hoạt động).
+  - `Customer`: Thông tin chi tiết của khách hàng (họ tên, số điện thoại, địa chỉ giao hàng).
+  - `Seller`: Thông tin hồ sơ đối tác bán hàng.
+  - `Admin`: Thông tin tài khoản quản trị hệ thống.
+- **Catalog & Inventory:**
+  - `Shop`: Cửa hàng của người bán (tên shop, mô tả, logo, trạng thái `status`: PENDING, ACTIVE, SUSPENDED, REJECTED).
+  - `Category`: Danh mục sản phẩm đa cấp do Admin cấu hình.
+  - `Product`: Thông tin sản phẩm (tên, mô tả, giá niêm yết, danh mục, trạng thái `status`: PENDING, APPROVED, REJECTED).
+  - `Inventory`: Quản lý kho hàng cho từng sản phẩm (số lượng thực tế `quantity`, số lượng đang được giữ trong đơn hàng `reservedQuantity`).
+- **Shopping Experience:**
+  - `Cart` & `CartItem`: Giỏ hàng của khách hàng, lưu trữ sản phẩm và số lượng chọn mua.
+  - `Wishlist` & `WishlistItem`: Danh sách sản phẩm người dùng đánh dấu quan tâm.
+- **Order & Payment Processing:**
+  - `OrderGroup`: Nhóm đơn hàng cha được sinh ra khi khách hàng thanh toán nhiều sản phẩm từ nhiều Shop khác nhau trong một phiên checkout.
+  - `Order`: Đơn hàng con tương ứng với từng Shop cụ thể (trạng thái: `PENDING`, `CONFIRMED`, `SHIPPING`, `COMPLETED`, `CANCELLED`).
+  - `OrderItem`: Chi tiết từng dòng sản phẩm trong đơn (giá bán tại thời điểm mua, số lượng, thành tiền).
+  - `Payment`: Thông tin thanh toán (phương thức: COD, trạng thái thanh toán).
+- **Engagement & Policies:**
+  - `Review`: Đánh giá (số sao 1-5, bình luận) của khách hàng sau khi nhận hàng và phản hồi của người bán.
+  - `Discount`: Mã giảm giá toàn sàn hoặc theo shop (theo số tiền cố định hoặc tỷ lệ phần trăm).
+  - `ShippingConfig`: Cấu hình phí vận chuyển mặc định theo khoảng giá trị đơn hàng.
+
+## 5. Luồng xử lý nghiệp vụ cốt lõi (Core Business Workflows)
+
+### 5.1. Luồng Xác thực & Phân quyền (Authentication & Authorization)
 
 ```text
-React Frontend -> NestJS Backend -> PostgreSQL
-React Frontend -> NestJS Backend -> FastAPI Recommendation Engine
+Khách hàng / Người bán / Admin gửi credentials (POST /auth/login)
+  -> NestJS xác thực qua bcrypt & Local Strategy
+  -> Sinh JWT Access Token (hạn ngắn) & Refresh Token
+  -> Client lưu trữ Token và đính kèm vào HTTP Header (Authorization: Bearer <token>)
+  -> JwtAuthGuard giải mã token -> RolesGuard kiểm tra quyền truy cập endpoint
 ```
 
-### Behavior event pipeline
+### 5.2. Luồng Vòng đời Sản phẩm (Product Lifecycle)
 
 ```text
-User Behavior
-  -> NestJS persistence
-  -> FastAPI POST /events
-  -> Kafka user-events topic
-  -> recommendation consumer
-  -> interactions.parquet
-  -> model training
-  -> offline evaluation gate
-  -> model promotion
-  -> Recommendation API
+1. Người bán tạo sản phẩm (POST /shops/products) -> Trạng thái: PENDING
+2. Quản trị viên duyệt sản phẩm (PATCH /admin/products/:id/approve) -> Trạng thái: APPROVED
+3. Sản phẩm hiển thị công khai trên Storefront (GET /products)
+4. Khách hàng xem chi tiết, kiểm tra tồn kho và thêm vào giỏ hàng
 ```
 
-Behavior persistence is authoritative in NestJS. Publishing to the recommendation provider is best effort, so a temporary provider outage does not undo the commerce action that produced the event.
+### 5.3. Luồng Đặt hàng và Phân chia Đơn hàng Đa Người bán (Multi-Vendor Checkout)
 
-### Catalog pipeline
+Hệ thống cho phép khách hàng chọn cùng lúc sản phẩm từ nhiều Shop khác nhau trong giỏ hàng:
 
 ```text
-PostgreSQL product data
-  -> NestJS Admin catalog sync
-  -> FastAPI PUT /catalog
-  -> items.parquet
+1. Khách hàng chọn các CartItems muốn mua -> POST /checkout/preview
+2. Hệ thống tính toán:
+   - Subtotal theo từng Shop
+   - Áp dụng mã giảm giá (Discount) và phân bổ giá trị chiết khấu chính xác theo trọng số từng Shop
+   - Tính phí vận chuyển (Shipping fee)
+3. Khách hàng xác nhận đặt hàng -> POST /checkout (Transaction):
+   - Tạo bản ghi OrderGroup (Mã MN-XXXXXX)
+   - Tách thành các đơn con Order tương ứng với từng Shop
+   - Kiểm tra và trừ tồn kho (Inventory decrement)
+   - Xóa các item đã mua khỏi giỏ hàng
+4. Người bán nhận đơn -> Xác nhận (CONFIRMED) -> Giao hàng (SHIPPING)
+5. Khách hàng nhận hàng -> Xác nhận nhận hàng (COMPLETED) -> Viết đánh giá (Review)
 ```
 
-### Recommendation retrieval
+## 6. Cấu trúc thư mục dự án (Project Directory Structure)
 
 ```text
-FastAPI ranked item IDs
-  -> NestJS batch hydration
-  -> commerce eligibility filtering
-  -> frontend-ready product response
-```
-
-## Technology Stack
-
-| Area | Technologies |
-| --- | --- |
-| Frontend | React 19, React Router, Vite 8, TypeScript 6, Axios, CSS |
-| Backend | NestJS 12, TypeORM, JWT/Passport, class-validator, class-transformer, Axios, RxJS |
-| Database | PostgreSQL with versioned TypeORM migrations |
-| Recommendation engine | Python 3.11, FastAPI, pandas, PyArrow/Parquet, implicit ALS, scikit-learn TF-IDF, MLflow |
-| Messaging and cache | Apache Kafka 3.8, Redis 7 |
-| Testing and quality | Vitest, Supertest, ESLint, Oxlint, Pytest |
-| DevOps and tooling | Docker, Docker Compose, GitHub Actions |
-
-## Repository Structure
-
-```text
-MarketNest/
-├── .github/
-│   └── workflows/
-│       └── recsys.yml              # Recommendation CI and quality-gate smoke test
-├── backend/
+ecommerce-system/
+├── backend/                        # Ứng dụng Backend NestJS
 │   ├── src/
-│   │   ├── common/                 # Guards, decorators, enums and shared interfaces
-│   │   ├── configs/                # Application, JWT and database configuration
-│   │   ├── database/migrations/    # TypeORM schema migrations
-│   │   └── modules/                # Commerce and recommendation integration modules
-│   ├── test/
-│   ├── .env.example
-│   └── package.json
-├── frontend/
+│   │   ├── common/                 # Guards, Decorators, Enums, Interfaces dùng chung
+│   │   ├── configs/                # Cấu hình Database, JWT, App Config
+│   │   ├── database/               # Data source & TypeORM Migrations
+│   │   └── modules/                # Các module nghiệp vụ (Auth, Product, Shop, Cart, Checkout, Order, Review, Admin)
+│   ├── test/                       # Cấu hình kiểm thử tích hợp (e2e)
+│   ├── vitest.config.ts            # Cấu hình kiểm thử đơn vị với Vitest
+│   ├── package.json                # Dependencies và scripts backend
+│   └── .env.example                # File mẫu biến môi trường backend
+├── frontend/                       # Ứng dụng Frontend React + Vite
 │   ├── src/
-│   │   ├── api/                    # NestJS API clients
-│   │   ├── components/             # Reusable interface components
-│   │   ├── context/                # Authentication state
-│   │   ├── layouts/                # Customer, Seller and Admin layouts
-│   │   ├── pages/                  # Role-specific screens
-│   │   ├── routes/                 # Protected-route handling
-│   │   └── types/                  # Frontend contracts
-│   ├── .env.example
-│   └── package.json
-├── recommendation/
-│   ├── app/                        # FastAPI, ranking, storage, training and evaluation logic
-│   ├── data/                       # Parquet datasets and event buffers
-│   ├── docs/                       # Recommendation-specific design notes
-│   ├── models/                     # Versioned ALS models and evaluation reports
-│   ├── scripts/                    # Topic, consumer, seed, train and evaluation commands
-│   ├── tests/
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   └── requirements.txt
-└── README.md
+│   │   ├── api/                    # Cấu hình Axios client và API callers
+│   │   ├── components/             # Các component giao diện dùng chung
+│   │   ├── context/                # AuthContext quản lý phiên đăng nhập
+│   │   ├── layouts/                # Layouts cho Customer, Seller, Admin
+│   │   ├── pages/                  # Các trang giao diện theo vai trò người dùng
+│   │   ├── routes/                 # Quản lý định tuyến và Protected Routes
+│   │   └── types/                  # TypeScript interface định nghĩa kiểu dữ liệu
+│   ├── package.json                # Dependencies và scripts frontend
+│   └── .env.example                # File mẫu biến môi trường frontend
+├── ui-tests/                       # Bộ kiểm thử giao diện tự động E2E với Playwright (Python)
+│   ├── screenshots/                # Ảnh chụp màn hình kết quả kiểm thử
+│   ├── test_homepage.py            # Kiểm thử hiển thị trang chủ
+│   ├── test_login.py               # Kiểm thử luồng đăng nhập (hợp lệ / không hợp lệ)
+│   ├── test_search.py              # Kiểm thử tìm kiếm sản phẩm
+│   ├── test_cart.py                # Kiểm thử thao tác giỏ hàng
+│   ├── test_wishlist.py            # Kiểm thử danh sách yêu thích
+│   ├── test_checkout.py            # Kiểm thử hoàn tất đặt hàng
+│   ├── test_order.py               # Kiểm thử xem chi tiết đơn hàng
+│   ├── test_receive_order.py       # Kiểm thử xác nhận nhận hàng
+│   ├── test_seller_order.py        # Kiểm thử quy trình xử lý đơn của người bán
+│   └── test_admin_product.py       # Kiểm thử quy trình duyệt sản phẩm của Admin
+└── README.md                       # Tài liệu hướng dẫn hệ thống & kiểm thử
 ```
 
-## Domain Model
+## 7. Hướng dẫn cài đặt và khởi chạy (Installation & Setup)
 
-The PostgreSQL schema is represented by these primary TypeORM entities:
+### Yêu cầu môi trường
 
-- **Identity:** `User`, `Customer`, `Seller`, `Admin`
-- **Marketplace:** `Shop`, `Category`, `Product`, `Inventory`
-- **Shopping:** `Cart`, `CartItem`, `Wishlist`, `WishlistItem`
-- **Orders:** `OrderGroup`, `Order`, `OrderItem`, `Payment`
-- **Engagement:** `Review`, `UserBehavior`
-- **Configuration:** `Discount`, `ShippingConfig`
+- **Node.js**: Phiên bản 20.x hoặc mới hơn
+- **PostgreSQL**: Phiên bản 15.x trở lên
+- **Python**: Phiên bản 3.10+ (sử dụng khi chạy bộ kiểm thử UI Playwright)
 
-## Recommendation System
+### Bước 1: Cấu hình Cơ sở dữ liệu PostgreSQL
 
-### Personalized recommendations
+Tạo một database trống trên PostgreSQL (ví dụ tên: `marketnest`):
 
-`GET /recommendations` is available to authenticated customers through NestJS. The backend resolves the customer profile, asks FastAPI for more candidates than the requested display limit, batch-loads the corresponding products, preserves provider ranking, and returns public product objects with their score and reason.
-
-If FastAPI is unavailable or produces no eligible candidates, NestJS returns the newest eligible products with the `database_fallback` strategy. The storefront therefore remains usable while the recommendation service is offline.
-
-### Similar products
-
-`GET /recommendations/similar/:productId` is public. FastAPI uses content similarity to find related catalog items. NestJS excludes the source product and applies the same commerce checks as personalized recommendations. Its provider-outage fallback returns eligible products from the same category using `database_same_category_fallback`.
-
-### Behavior signals
-
-The NestJS `BehaviorType` enum contains exactly four signals:
-
-| Backend event | Recommendation event | Produced by |
-| --- | --- | --- |
-| `VIEW` | `view` | Public product-detail viewing |
-| `ADD_CART` | `cart` | Adding a product to the cart |
-| `WISHLIST` | `wishlist` | Adding a product to the wishlist |
-| `PURCHASE` | `purchase` | Successful order creation |
-
-These events are first recorded in PostgreSQL as `UserBehavior` data. NestJS then publishes the corresponding single-product event to FastAPI.
-
-### Hybrid ranking strategy
-
-The ranking service combines three implemented sources:
-
-1. **Implicit ALS collaborative filtering** learns from weighted user-product interactions.
-2. **Content-based similarity** uses TF-IDF catalog representations for item neighbors and user-history signals.
-3. **Trending popularity** applies event weights and time decay, and provides the fallback for unknown users.
-
-Users below the configured cold-start threshold use content and trending signals. Users with sufficient distinct consumed products use the full hybrid score. The service suppresses already-consumed products, removes duplicates, filters unavailable catalog items, and limits excessive same-category adjacency.
-
-### Catalog synchronization
-
-An administrator can invoke `POST /admin/recommendation/catalog/sync`. NestJS builds a full recommendation-safe product snapshot and sends it to FastAPI through `PUT /catalog`. The service validates the snapshot and atomically writes `recommendation/data/items.parquet`.
-
-The synchronization endpoint is protected by `JwtAuthGuard`, `RolesGuard` and the `ADMIN` role. It is intentionally not a public catalog-management endpoint.
-
-### Event processing
-
-FastAPI accepts one interaction through `POST /events`, assigns or preserves a request ID, and publishes it to the `user-events` Kafka topic. If Kafka is temporarily unavailable, the API writes the event to its local buffer instead of returning a server error.
-
-The `recommendation-consumer` joins the `recsys-v1` consumer group, deduplicates request IDs, and atomically updates `interactions.parquet`. A dead-letter topic named `user-events-dlq` is also provisioned by the repository bootstrap script.
-
-### Model lifecycle
-
-```text
-Interaction snapshot
-  -> train versioned ALS model
-  -> evaluate against the popularity baseline
-  -> require the offline quality gate to pass
-  -> update current_version.txt
-  -> invalidate relevant cached results
+```sql
+CREATE DATABASE marketnest;
 ```
 
-The evaluation command reports Precision@K, Recall@K, NDCG@K and MAP@K. Promotion requires the hybrid NDCG to exceed the baseline by the configured `0.02` margin and requires cold-start coverage. A failed evaluation exits with code `3`; the active model pointer is left unchanged.
+### Bước 2: Cài đặt và khởi chạy Backend (NestJS)
 
-### Commerce filtering
+1. Di chuyển vào thư mục backend và cài đặt thư viện:
+   ```bash
+   cd backend
+   npm install
+   ```
 
-FastAPI ranks candidates, but NestJS decides what may be shown. A recommended item is returned only when:
+2. Tạo file cấu hình môi trường `.env` từ `.env.example`:
+   - Trên Linux/macOS: `cp .env.example .env`
+   - Trên Windows PowerShell: `Copy-Item .env.example .env`
 
-- `Product.status` is `APPROVED`
-- `Shop.status` is `ACTIVE`
-- `Category.status` is `ACTIVE`
-- an `Inventory` record exists
-- `inventory.quantity > inventory.reservedQuantity`
+3. Chỉnh sửa thông số kết nối Database trong file `backend/.env`:
+   ```dotenv
+   DB_HOST=localhost
+   DB_PORT=5432
+   DB_USERNAME=postgres
+   DB_PASSWORD=your_password
+   DB_NAME=marketnest
+   DB_SSL=false
 
-This keeps marketplace rules centralized in the commerce backend.
+   JWT_ACCESS_SECRET=your_jwt_access_secret_key_here
+   JWT_ACCESS_EXPIRES_IN=15m
+   JWT_REFRESH_SECRET=your_jwt_refresh_secret_key_here
+   JWT_REFRESH_EXPIRES_IN=7d
+   ```
 
-## Installation and Setup
+4. Chạy migration để khởi tạo cấu trúc bảng:
+   ```bash
+   npm run migration:run
+   ```
 
-### Prerequisites
+5. Khởi động Backend server:
+   ```bash
+   npm run start:dev
+   ```
+   *Backend mặc định chạy tại địa chỉ:* `http://localhost:3000`
 
-- [Node.js](https://nodejs.org/) with npm
-- [PostgreSQL](https://www.postgresql.org/)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) with Docker Compose
-- Bash through Git Bash, WSL or a Unix-like shell for the provided recommendation scripts
-- Python 3.11 only when running the recommendation service outside Docker
+### Bước 3: Cài đặt và khởi chạy Frontend (React + Vite)
 
-> The repository pins the recommendation CI environment to Python 3.11. Docker is the recommended local runtime for FastAPI, Kafka, Redis and the consumer.
+1. Mở cửa sổ terminal mới, di chuyển vào thư mục frontend:
+   ```bash
+   cd frontend
+   npm install
+   ```
 
-### 1. Clone the repository
+2. Khởi tạo file `.env`:
+   - Trên Windows PowerShell: `Copy-Item .env.example .env`
+   - Nội dung file `frontend/.env`:
+     ```dotenv
+     VITE_API_URL=http://localhost:3000
+     ```
+
+3. Khởi chạy ứng dụng Frontend:
+   ```bash
+   npm run dev
+   ```
+   *Frontend mặc định mở tại địa chỉ:* `http://localhost:5173`
+
+---
+
+# Phần 2: Kiểm thử hệ thống (Testing)
+
+Hệ thống MarketNest áp dụng chiến lược kiểm thử toàn diện đa cấp độ, kết hợp 4 công cụ và phương pháp kiểm thử chủ lực: **Postman**, **Unit Test với Vitest**, **Playwright** và **Apache JMeter**.
+
+```
+             / \
+            /   \          [JMeter] Performance & Load Testing
+           /  E2E \        [Playwright] End-to-End UI Testing
+          /--------\
+         /   API    \      [Postman] Integration & REST API Testing
+        /------------\
+       /  Unit Tests  \    [Vitest] Component & Business Logic Unit Testing
+      /----------------\
+```
+
+---
+
+## 1. Chiến lược và mô hình kiểm thử (Testing Strategy)
+
+Chiến lược kiểm thử được phân bổ nhằm đảm bảo chất lượng từ chi tiết mã nguồn đến trải nghiệm người dùng thực tế:
+
+| Loại kiểm thử | Công cụ | Mục tiêu kiểm thử | Đối tượng / Phạm vi kiểm thử |
+| :--- | :--- | :--- | :--- |
+| **Unit Testing** | **Vitest** | Kiểm thử logic nghiệp vụ nội bộ, thuật toán tính toán, quy tắc dữ liệu | Các hàm Service, validation rules, money allocations, trạng thái đơn hàng |
+| **API Testing** | **Postman** | Kiểm thử giao diện lập trình, mã trạng thái HTTP, hợp đồng dữ liệu (Contract), phân quyền | Toàn bộ các REST API Endpoints của Backend NestJS |
+| **E2E UI Testing** | **Playwright** | Kiểm thử tự động giao diện và luồng hành vi thực tế của người dùng từ đầu đến cuối | Giao diện Web (Storefront, Cart, Checkout, Order Tracking, Seller & Admin Dashboards) |
+| **Performance Testing** | **Apache JMeter** | Kiểm tra năng lực chịu tải, thời gian phản hồi (latency), thông lượng (throughput) | Kiểm thử tải đồng thời (Browsing, Authentication, Checkout Stress Test) |
+
+---
+
+## 2. Kiểm thử đơn vị (Unit Testing) với Vitest
+
+### 2.1. Giới thiệu & Mục tiêu
+
+Kiểm thử đơn vị được thực hiện trực tiếp trên Backend với **Vitest** – framework kiểm thử hiện đại có tốc độ thực thi vượt trội và khả năng tương thích hoàn hảo với TypeScript và NestJS.
+
+Mục tiêu chính:
+- Đảm bảo tính toán chính xác tuyệt đối các giá trị tài chính (`bigint`), tỷ lệ giảm giá, phân bổ tiền theo từng shop mà không bị sai số làm tròn số học (rounding issues).
+- Đảm bảo tính toàn vẹn của máy trạng thái đơn hàng (Order State Machine: không cho phép nhảy cóc trạng thái).
+- Kiểm tra các ràng buộc nghiệp vụ (Business Constraints) như điều kiện để được đánh giá sản phẩm, giới hạn tồn kho.
+
+### 2.2. Các bộ kiểm thử chính
+
+Cấu hình Vitest được đặt tại `backend/vitest.config.ts`, tự động quét các file có đuôi `*.spec.ts`:
+
+1. **`checkout.service.spec.ts` - Kiểm thử logic thanh toán và chiết khấu:**
+   - **Tính toán tiền tệ:** Xác minh tính toán Subtotal, phí vận chuyển (Shipping fee), giảm giá theo phần trăm (`PERCENT`) và giảm giá theo số tiền cố định (`FIXED`).
+   - **Giới hạn chiết khấu vận chuyển:** Đảm bảo mã giảm giá ship không bao giờ vượt quá tổng phí ship thực tế.
+   - **Phân bổ chiết khấu đa shop (Multi-shop Allocation):** Khi đơn hàng gồm sản phẩm của nhiều shop, kiểm tra thuật toán phân bổ tiền giảm giá theo tỷ trọng doanh thu của từng shop và xử lý phần dư làm tròn (remainder) ở shop cuối cùng.
+   - **Xác thực mã giảm giá:** Kiểm tra tính hợp lệ của mã giảm giá (áp dụng đúng đối tượng `PRODUCT` hoặc `SHIPPING`, đơn giá tối thiểu).
+   - **Tính hợp lệ của giỏ hàng:** Đảm bảo toàn bộ sản phẩm khách hàng chọn thanh toán đều tồn tại và hợp lệ.
+
+2. **`order.service.spec.ts` - Kiểm thử quản lý trạng thái đơn hàng:**
+   - Kiểm tra luồng xác nhận nhận hàng (`confirmOrderReceived`): Đảm bảo chỉ đơn hàng đang ở trạng thái `SHIPPING` mới được chuyển sang `COMPLETED`.
+   - Kiểm tra việc bảo toàn danh sách `OrderItem` và tính toàn vẹn của dữ liệu đơn sau khi giao dịch hoàn tất.
+
+3. **`review.service.spec.ts` - Kiểm thử ràng buộc đánh giá:**
+   - Kiểm tra điều kiện tiên quyết: Chỉ khách hàng đã mua sản phẩm và đơn hàng đã ở trạng thái `COMPLETED` mới có quyền gửi đánh giá.
+   - Kiểm tra quyền phản hồi đánh giá của người bán: Chỉ chủ sở hữu gian hàng mới có quyền trả lời đánh giá sản phẩm của shop mình.
+
+### 2.3. Lệnh thực thi Unit Test
+
+Tại thư mục `backend/`:
 
 ```bash
-git clone https://github.com/Doancoso-phenikaa/ecommerce-recommendation-system.git
-cd ecommerce-recommendation-system
-```
-
-### 2. Configure PostgreSQL
-
-Create an empty PostgreSQL database and a user with permission to manage its schema. Keep the connection values available for the backend environment file. Schema synchronization is disabled; migrations must be run explicitly.
-
-### 3. Backend setup
-
-```bash
-cd backend
-npm install
-cp .env.example .env
-```
-
-Configure `backend/.env`:
-
-```dotenv
-DB_HOST=localhost
-DB_PORT=5432
-DB_USERNAME=postgres
-DB_PASSWORD=your_password
-DB_NAME=marketnest
-DB_SSL=false
-DB_SSL_REJECT_UNAUTHORIZED=true
-DB_SSL_CA_PATH=
-
-JWT_ACCESS_SECRET=replace_with_a_strong_access_secret
-JWT_ACCESS_EXPIRES_IN=15m
-JWT_REFRESH_SECRET=replace_with_a_strong_refresh_secret
-JWT_REFRESH_EXPIRES_IN=7d
-
-RECOMMENDATION_SERVICE_URL=http://localhost:8000
-RECOMMENDATION_SERVICE_TIMEOUT_MS=5000
-```
-
-Apply the existing migrations and start the API:
-
-```bash
-npm run migration:run
-npm run start:dev
-```
-
-The backend listens on `http://localhost:3000` by default and permits the local Vite origin at `http://localhost:5173`.
-
-### 4. Recommendation stack
-
-From the repository root, start Kafka and Redis first:
-
-```bash
-docker compose -f recommendation/docker-compose.yml up -d kafka redis
-bash recommendation/scripts/bootstrap_topics.sh
-```
-
-Build and start FastAPI and the Kafka consumer:
-
-```bash
-docker compose -f recommendation/docker-compose.yml up -d --build recommendation-api recommendation-consumer
-```
-
-Verify the stack:
-
-```bash
-docker compose -f recommendation/docker-compose.yml ps
-curl http://localhost:8000/health
-```
-
-The bootstrap script is required because Kafka topic auto-creation is disabled. It idempotently creates `user-events` and `user-events-dlq`.
-
-To stop the recommendation stack without deleting its named volumes:
-
-```bash
-docker compose -f recommendation/docker-compose.yml down
-```
-
-### 5. Frontend setup
-
-Open a separate terminal:
-
-```bash
-cd frontend
-npm install
-cp .env.example .env
-npm run dev
-```
-
-The default frontend environment is:
-
-```dotenv
-VITE_API_URL=http://localhost:3000
-```
-
-Open `http://localhost:5173`.
-
-### Windows environment-file copies
-
-When using PowerShell instead of Bash, replace the `cp` commands with:
-
-```powershell
-Copy-Item backend/.env.example backend/.env
-Copy-Item frontend/.env.example frontend/.env
-```
-
-### Optional native Python setup
-
-Docker avoids platform-specific scientific Python and Kafka setup. If the recommendation service must run natively, the repository supports Python 3.11:
-
-```bash
-python -m venv recommendation/.venv
-source recommendation/.venv/bin/activate
-python -m pip install -r recommendation/requirements.txt
-```
-
-Set `PYTHONPATH` to the repository root and provide at least `REDIS_URL` and `MODEL_DIR`. Kafka defaults to `localhost:9092` and the topic defaults to `user-events`.
-
-```bash
-export PYTHONPATH=.
-export REDIS_URL=redis://localhost:6379/0
-export MODEL_DIR="$PWD/recommendation/models"
-uvicorn recommendation.app.main:app --host 0.0.0.0 --port 8000
-```
-
-Run the consumer in another terminal with the same environment:
-
-```bash
-python recommendation/scripts/consume.py
-```
-
-### Service endpoints
-
-| Service | Local address | Purpose |
-| --- | --- | --- |
-| React frontend | `http://localhost:5173` | Customer, Seller and Admin interfaces |
-| NestJS backend | `http://localhost:3000` | Authentication and commerce API |
-| FastAPI recommendation service | `http://localhost:8000` | Ranking, events, catalog sync and health |
-| Kafka | `localhost:9092` | Behavior event stream |
-| Redis | `localhost:6379` | Recommendation cache |
-
-## Recommendation Operations
-
-### Synchronize the real product catalog
-
-After signing in as an administrator, trigger the protected NestJS endpoint with the issued access token:
-
-```bash
-curl -X POST http://localhost:3000/admin/recommendation/catalog/sync \
-  -H "Authorization: Bearer <ADMIN_ACCESS_TOKEN>"
-```
-
-### Seed, train and evaluate
-
-The commands used by CI are run from the repository root:
-
-```bash
-export PYTHONPATH=.
-python recommendation/scripts/seed.py
-python recommendation/scripts/train.py --version local --no-pointer
-python recommendation/scripts/evaluate.py --version local
-```
-
-`--no-pointer` prevents an unevaluated model from becoming active. The evaluation command promotes nothing by itself; the lifecycle script owns gated promotion.
-
-### Gated retraining
-
-Inspect the workflow without mutating the active pointer, cache or log:
-
-```bash
-bash recommendation/scripts/retrain.sh --dry-run
-```
-
-Run the complete drain, train, evaluate and promotion workflow:
-
-```bash
-bash recommendation/scripts/retrain.sh
-```
-
-Use `--no-consumer-restart` only when an external supervisor owns the consumer process.
-
-## API Highlights
-
-This is a selected integration map rather than a complete API specification.
-
-| Method and path | Access | Purpose |
-| --- | --- | --- |
-| `POST /auth/register/customer` | Public | Register a customer account |
-| `POST /auth/register/seller` | Public | Register a seller account |
-| `POST /auth/login` | Public | Issue access and refresh tokens |
-| `GET /products` | Public | Browse and filter eligible products |
-| `GET /products/:productId` | Public | Read a public product detail |
-| `GET /shops` | Public | List active shops |
-| `GET /shops/:shopId` | Public | Read a public shop page payload |
-| `POST /checkout/preview` | Customer | Preview selected cart items and totals |
-| `POST /checkout` | Customer | Confirm checkout and create orders |
-| `GET /recommendations` | Customer | Get personalized, hydrated products |
-| `GET /recommendations/similar/:productId` | Public | Get similar, hydrated products |
-| `POST /admin/recommendation/catalog/sync` | Admin | Push a full catalog snapshot to FastAPI |
-
-FastAPI also exposes `POST /events`, `PUT /catalog`, `GET /recommendations/{user_id}`, `GET /similar/{item_id}`, `GET /health` and `GET /metrics` for server-to-server integration and observability.
-
-## Quality Checks
-
-### Frontend
-
-```bash
-cd frontend
-npm run lint
-npm run build
-```
-
-### Backend
-
-```bash
-cd backend
-npm run lint
+# Chạy toàn bộ Unit Test
 npm run test
-npm run build
+
+# Chạy test ở chế độ theo dõi (Watch mode khi phát triển)
+npm run test:watch
+
+# Chạy kiểm thử và xuất báo cáo độ phủ mã nguồn (Coverage Report)
+npm run test:cov
 ```
 
-### Recommendation service
+---
 
-From the repository root with Python dependencies installed:
+## 3. Kiểm thử API (API Testing) với Postman
+
+### 3.1. Giới thiệu & Mục tiêu
+
+Postman được sử dụng để kiểm thử tích hợp toàn bộ các endpoint RESTful API mà Backend NestJS cung cấp. 
+
+Mục tiêu chính:
+- Xác nhận các endpoint phản hồi đúng mã trạng thái HTTP tiêu chuẩn (`200 OK`, `201 Created`, `400 Bad Request`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`).
+- Kiểm tra tính hợp lệ của cấu trúc JSON phản hồi (Response Schema Validation).
+- Kiểm tra cơ chế bảo mật: Xác thực Bearer JWT Token và phân quyền vai trò (Role-Based Access Control).
+
+### 3.2. Cấu hình biến môi trường Postman (Environment Variables)
+
+Bộ sưu tập Postman sử dụng các biến môi trường động:
+
+| Tên biến | Giá trị mẫu | Mục đích |
+| :--- | :--- | :--- |
+| `base_url` | `http://localhost:3000` | Địa chỉ gốc của Backend API |
+| `customer_token` | `eyJhbGciOi...` | Access Token của tài khoản Khách hàng |
+| `seller_token` | `eyJhbGciOi...` | Access Token của tài khoản Người bán |
+| `admin_token` | `eyJhbGciOi...` | Access Token của tài khoản Quản trị viên |
+| `test_product_id` | `80` | ID sản phẩm dùng trong kịch bản test |
+| `test_order_id` | `501` | ID đơn hàng dùng trong kịch bản test |
+
+### 3.3. Các kịch bản kiểm thử API chi tiết
+
+1. **Nhóm Xác thực (Authentication Suite):**
+   - `POST /auth/register/customer`: Đăng ký tài khoản khách hàng mới (kiểm tra tính hợp lệ của email, độ mạnh mật khẩu).
+   - `POST /auth/register/seller`: Đăng ký tài khoản người bán.
+   - `POST /auth/login`: Đăng nhập hệ thống, kiểm tra nhận về cặp `accessToken` và `refreshToken`.
+   - *Test script tự động:* Lưu `accessToken` vào biến môi trường Postman sau khi đăng nhập thành công.
+2. **Nhóm Sản phẩm & Cửa hàng (Catalog & Shop Suite):**
+   - `GET /products`: Lấy danh sách sản phẩm công khai kèm phân trang và lọc theo danh mục.
+   - `GET /products/:id`: Xem chi tiết sản phẩm.
+   - `POST /shops/products`: Người bán đăng bán sản phẩm mới (yêu cầu `seller_token`).
+   - `PATCH /admin/products/:id/approve`: Quản trị viên phê duyệt sản phẩm (yêu cầu `admin_token`, từ chối khi dùng `customer_token`).
+3. **Nhóm Giỏ hàng & Thanh toán (Cart & Checkout Suite):**
+   - `GET /cart`: Lấy thông tin giỏ hàng của khách hàng hiện tại.
+   - `POST /cart/items`: Thêm sản phẩm vào giỏ với số lượng chỉ định.
+   - `POST /checkout/preview`: Xem trước tổng tiền, chiết khấu và phí vận chuyển.
+   - `POST /checkout`: Gửi yêu cầu đặt hàng, xác nhận tạo thành công `OrderGroup` và các đơn con.
+4. **Nhóm Đơn hàng & Đánh giá (Order & Review Suite):**
+   - `GET /orders`: Lấy danh sách lịch sử đơn hàng.
+   - `PATCH /orders/:id/status`: Người bán cập nhật trạng thái đơn (chuyển sang `SHIPPING`).
+   - `POST /orders/:id/confirm-receipt`: Khách hàng xác nhận đã nhận hàng (chuyển sang `COMPLETED`).
+   - `POST /reviews`: Khách hàng gửi đánh giá sau khi đơn hoàn tất.
+
+### 3.4. Tự động hóa kiểm thử API bằng Newman CLI
+
+Có thể tích hợp chạy tự động toàn bộ Postman Collection bằng Newman:
 
 ```bash
-PYTHONPATH=. python -m pytest recommendation/tests -q -m "not integration"
+# Cài đặt Newman (nếu chưa có)
+npm install -g newman
+
+# Chạy bộ test Postman và xuất báo cáo
+newman run ./postman/MarketNest_Collection.json -e ./postman/MarketNest_Environment.json --reporters cli,html --reporter-html-export ./postman/report.html
 ```
 
-The GitHub Actions workflow also performs a `seed -> train -> evaluate` smoke test and verifies that the baseline-only evaluation fails with the expected exit code `3`.
+---
 
-## Troubleshooting
+## 4. Kiểm thử tự động đầu-cuối (End-to-End UI Testing) với Playwright
 
-### Recommendation provider connection warnings
+### 4.1. Giới thiệu & Mục tiêu
 
-Warnings containing `ECONNREFUSED 127.0.0.1:8000` or `ECONNREFUSED ::1:8000` mean that NestJS cannot reach FastAPI at `RECOMMENDATION_SERVICE_URL`. Check Docker Desktop and the service state:
+Bộ kiểm thử E2E được đặt tại thư mục `ui-tests/`, sử dụng framework **Playwright** (kết hợp thư viện `pytest` của Python). Playwright điều khiển trình duyệt thực tế (Chromium) để giả lập trọn vẹn hành động của người dùng từ giao diện Frontend tương tác xuống Backend và Database.
+
+Mục tiêu chính:
+- Kiểm tra tính toàn vẹn của luồng người dùng (User Journey) trên giao diện thực.
+- Xác nhận trạng thái hiển thị của các thành phần UI (Form, Button, Modal, Thông báo lỗi, Thông tin đơn hàng).
+- Tự động ghi lại ảnh chụp màn hình (Screenshots) tại mỗi bước quan trọng để làm bằng chứng kiểm thử trực quan.
+
+### 4.2. Danh mục các kịch bản kiểm thử E2E
+
+Thư mục `ui-tests/` bao gồm 10 kịch bản kiểm thử tự động độc lập:
+
+| Tệp kiểm thử | Chức năng kiểm thử | Quy trình kiểm thử | Ảnh chụp bằng chứng |
+| :--- | :--- | :--- | :--- |
+| `test_homepage.py` | Hiển thị Trang chủ | Mở trang chủ, kiểm tra tải danh mục, danh sách sản phẩm nổi bật | `screenshots/homepage.png` |
+| `test_login.py` | Đăng nhập hệ thống | 1. Nhập sai mật khẩu -> kiểm tra hiển thị thông báo lỗi.<br/>2. Nhập đúng tài khoản -> kiểm tra chuyển hướng thành công | `screenshots/login-invalid.png`<br/>`screenshots/login-success.png` |
+| `test_search.py` | Tìm kiếm sản phẩm | Nhập từ khóa tìm kiếm, kiểm tra kết quả trả về đúng trên giao diện | `screenshots/search-product.png` |
+| `test_cart.py` | Thao tác giỏ hàng | Chọn sản phẩm, bấm "Thêm vào giỏ", kiểm tra cập nhật số lượng trên icon giỏ hàng | `screenshots/cart-product.png` |
+| `test_wishlist.py` | Danh sách yêu thích | Thêm sản phẩm vào Wishlist, kiểm tra hiển thị; sau đó xóa sản phẩm khỏi Wishlist | `screenshots/wishlist-product-added.png`<br/>`screenshots/wishlist-product-removed.png` |
+| `test_checkout.py` | Đặt hàng hoàn tất (Checkout) | Đăng nhập -> Vào giỏ hàng -> Chọn sản phẩm -> Bấm "Tiến hành đặt hàng" -> Chọn COD -> Bấm "Xác nhận đặt hàng" -> Xác minh trang thành công và mã đơn `MN-XXXXXX` | `screenshots/checkout-success.png` |
+| `test_order.py` | Xem lịch sử đơn | Đăng nhập tài khoản khách hàng, vào danh sách đơn hàng, xem chi tiết đơn vừa đặt | `screenshots/order-detail.png` |
+| `test_seller_order.py` | Người bán xử lý đơn | Người bán đăng nhập, xem danh sách đơn hàng mới (PENDING), xác nhận đơn và chuyển trạng thái giao hàng (SHIPPING) | `screenshots/seller-order-list-pending.png`<br/>`screenshots/seller-order-shipping.png` |
+| `test_receive_order.py` | Xác nhận nhận hàng | Khách hàng mở đơn hàng đang giao, nhấn "Đã nhận hàng", xác nhận đơn chuyển sang trạng thái COMPLETED | `screenshots/receive-order-completed.png` |
+| `test_admin_product.py` | Admin duyệt sản phẩm | Admin truy cập danh sách chờ duyệt, duyệt sản phẩm mới đăng của Seller | `screenshots/admin-product-approved.png` |
+
+### 4.3. Hướng dẫn thiết lập và chạy kiểm thử Playwright
+
+1. Di chuyển vào thư mục `ui-tests/`:
+   ```bash
+   cd ui-tests
+   ```
+
+2. Tạo và kích hoạt môi trường ảo Python:
+   - Trên Windows:
+     ```powershell
+     python -m venv .venv
+     .venv\Scripts\activate
+     ```
+   - Trên Linux/macOS:
+     ```bash
+     python3 -m venv .venv
+     source .venv/bin/activate
+     ```
+
+3. Cài đặt các thư viện kiểm thử cần thiết:
+   ```bash
+   pip install pytest playwright
+   playwright install chromium
+   ```
+
+4. Thiết lập biến môi trường tài khoản thử nghiệm:
+   - Trên Windows PowerShell:
+     ```powershell
+     $env:MARKETNEST_TEST_EMAIL="customer@example.com"
+     $env:MARKETNEST_TEST_PASSWORD="Password123!"
+     $env:MARKETNEST_TEST_PRODUCT_ID="80"
+     ```
+   - Trên Linux/macOS:
+     ```bash
+     export MARKETNEST_TEST_EMAIL="customer@example.com"
+     export MARKETNEST_TEST_PASSWORD="Password123!"
+     export MARKETNEST_TEST_PRODUCT_ID="80"
+     ```
+
+5. Chạy kiểm thử:
+   ```bash
+   # Chạy toàn bộ các kịch bản kiểm thử UI
+   pytest
+
+   # Chạy một kịch bản kiểm thử cụ thể (ví dụ kịch bản đặt hàng)
+   pytest test_checkout.py
+
+   # Chạy kiểm thử có hiển thị trình duyệt trực quan (headed mode)
+   pytest test_checkout.py -s
+   ```
+   *Sau khi hoàn tất, toàn bộ ảnh chụp màn hình bằng chứng sẽ được lưu tự động tại thư mục `ui-tests/screenshots/`.*
+
+---
+
+## 5. Kiểm thử hiệu năng và tải (Performance & Load Testing) với Apache JMeter
+
+### 5.1. Giới thiệu & Mục tiêu
+
+**Apache JMeter** được sử dụng để đánh giá năng lực xử lý, tính ổn định và giới hạn chịu tải của hệ thống MarketNest khi có nhiều người dùng đồng thời truy cập.
+
+Mục tiêu chính:
+- Xác định thời gian phản hồi trung bình (Average Response Time) và thời gian phản hồi phân vị thứ 90/95 (90th/95th Percentile Latency).
+- Đo lường thông lượng tối đa (Throughput / Requests Per Second - RPS) mà hệ thống có thể đáp ứng.
+- Đánh giá tính toàn vẹn của dữ liệu và tỷ lệ lỗi (Error Rate) khi chịu tải đỉnh.
+
+### 5.2. Các kịch bản kiểm thử tải trọng điểm
+
+1. **Kịch bản 1: Tải duyệt sản phẩm (Browsing Workload - Read-Heavy):**
+   - **Mục tiêu:** Mô phỏng hành vi khách hàng liên tục duyệt trang chủ, tìm kiếm và xem chi tiết sản phẩm.
+   - **Cấu hình kiểm thử:**
+     - Endpoint: `GET /products`, `GET /products?page=1&limit=12`, `GET /products/:id`
+     - Số lượng người dùng ảo (Thread/Virtual Users): 100 - 500 người dùng đồng thời.
+     - Ramp-up period: 30 giây.
+     - Thời gian chạy (Loop/Duration): 5 phút.
+   - **Chỉ số kỳ vọng:** Thời gian phản hồi trung bình < 300ms, tỷ lệ lỗi 0%.
+
+2. **Kịch bản 2: Tải xác thực đồng thời (Authentication Load):**
+   - **Mục tiêu:** Kiểm tra năng lực xử lý băm mật khẩu `bcrypt` và sinh chuỗi khóa JWT của NestJS dưới áp lực nhiều yêu cầu đăng nhập cùng lúc.
+   - **Cấu hình kiểm thử:**
+     - Endpoint: `POST /auth/login` (Body kèm tài khoản/mật khẩu ngẫu nhiên từ file CSV Dataset).
+     - Số lượng Thread: 50 - 200 người dùng ảo đồng thời.
+   - **Chỉ số kỳ vọng:** Thời gian phản hồi phân vị 95th < 800ms, CPU server không bị nghẽn do bcrypt.
+
+3. **Kịch bản 3: Tải đặt hàng và tranh chấp tồn kho (Checkout Stress Test - Write-Heavy & Concurrency):**
+   - **Mục tiêu:** Mô phỏng kịch bản Flash Sale khi nhiều người dùng cùng thêm một mặt hàng vào giỏ và đồng thời gửi yêu cầu thanh toán (`POST /checkout`).
+   - **Kiểm tra nghiệp vụ:**
+     - Đảm bảo cơ chế Database Transaction xử lý tranh chấp tồn kho (Race Condition) chính xác.
+     - Tuyệt đối không xảy ra tình trạng bán vượt quá số lượng tồn kho (Overselling).
+     - Các yêu cầu đến sau khi hết hàng phải nhận về lỗi `400 Bad Request` hoặc `409 Conflict` một cách an toàn thay vì gây sập server (`500 Internal Server Error`).
+
+### 5.3. Tiêu chí đánh giá chất lượng hiệu năng (Key Performance Indicators - KPIs)
+
+| Chỉ số hiệu năng | Mức Đạt (Acceptable) | Mức Tốt (Optimal) |
+| :--- | :--- | :--- |
+| **Response Time (Các API đọc - GET)** | < 500 ms | < 200 ms |
+| **Response Time (Các API ghi/giao dịch - POST/PATCH)** | < 1000 ms | < 500 ms |
+| **95th Percentile Response Time** | < 1500 ms | < 800 ms |
+| **Tỷ lệ lỗi (Error Rate)** | < 1% khi tải đỉnh | 0% ở tải bình thường |
+| **Thông lượng (Throughput)** | > 200 req/s | > 500 req/s |
+
+### 5.4. Hướng dẫn thực thi kiểm thử JMeter
+
+1. **Thiết kế Kịch bản kiểm thử (GUI Mode):**
+   - Khởi động giao diện JMeter: Chạy `jmeter.bat` (trên Windows) hoặc `./jmeter` (trên Linux).
+   - Mở hoặc tạo mới tệp kịch bản kiểm thử `ecommerce_test_plan.jmx`.
+   - Cấu hình: *Thread Group (Số lượng User, Ramp-up), HTTP Request Defaults (Server Name: localhost, Port: 3000), HTTP Header Manager (Content-Type: application/json).*
+
+2. **Chạy kiểm thử đo lường chính xác (CLI / Non-GUI Mode):**
+   *Khuyến nghị: Luôn chạy kiểm thử tải bằng chế độ dòng lệnh để hạn chế tài nguyên đồ họa làm ảnh hưởng kết quả đo.*
+
+   ```bash
+   # Chạy test plan và xuất kết quả ra file log .jtl cùng báo cáo HTML trực quan
+   jmeter -n -t ecommerce_test_plan.jmx -l results.jtl -e -o ./jmeter_report
+   ```
+
+3. **Phân tích kết quả:**
+   - Mở file `jmeter_report/index.html` trên trình duyệt để kiểm tra:
+     - **Dashboard:** Tổng số request, tỷ lệ lỗi, thông lượng (Throughput).
+     - **Over Time Graphs:** Biểu đồ độ trễ phản hồi theo thời gian (Response Times Over Time).
+     - **Hits per Second:** Tần suất request thành công mỗi giây.
+
+---
+
+## 6. Tổng hợp lệnh chạy kiểm thử (Quick Test Commands)
+
+Bảng tra cứu nhanh toàn bộ câu lệnh thực thi kiểm thử trong dự án:
 
 ```bash
-docker compose -f recommendation/docker-compose.yml ps
-curl http://localhost:8000/health
-```
-
-Commerce remains available because NestJS uses database-backed recommendation fallbacks and event publication is best effort.
-
-### Kafka topics are missing
-
-Kafka auto-creation is deliberately disabled. Run:
-
-```bash
-bash recommendation/scripts/bootstrap_topics.sh
-```
-
-### Database schema errors
-
-Confirm that the PostgreSQL values in `backend/.env` are correct, then apply migrations:
-
-```bash
+# ==========================================
+# 1. UNIT TESTING (VITEST)
+# ==========================================
 cd backend
-npm run migration:run
+npm run test           # Chạy toàn bộ Unit Test
+npm run test:watch     # Chạy Unit Test ở chế độ theo dõi
+npm run test:cov       # Chạy Unit Test và xuất báo cáo coverage
+
+# ==========================================
+# 2. API TESTING (POSTMAN / NEWMAN)
+# ==========================================
+newman run ./postman/MarketNest_Collection.json -e ./postman/MarketNest_Environment.json
+
+# ==========================================
+# 3. END-TO-END UI TESTING (PLAYWRIGHT)
+# ==========================================
+cd ui-tests
+.venv\Scripts\activate # Kích hoạt môi trường ảo Python
+pytest                 # Chạy toàn bộ kịch bản E2E
+pytest test_checkout.py # Chạy riêng kịch bản đặt hàng
+
+# ==========================================
+# 4. PERFORMANCE TESTING (APACHE JMETER)
+# ==========================================
+jmeter -n -t ecommerce_test_plan.jmx -l results.jtl -e -o ./jmeter_report
 ```
-
-Do not enable TypeORM `synchronize`; the application and CLI configurations both intentionally set it to `false`.
-
-## Security and Configuration Notes
-
-- Never commit populated `.env` files or production secrets.
-- Use distinct, high-entropy JWT access and refresh secrets.
-- Keep `DB_SSL=true` and configure certificate verification when required by the deployed PostgreSQL provider.
-- The local Docker Compose topology is intended for development and evaluation; production sizing, secrets, persistence and Kafka replication require separate deployment configuration.
-- FastAPI is an internal ranking provider. Route browser traffic through NestJS so authorization and commerce rules remain enforced.
-
-## Contributors
-
-MarketNest is developed and maintained by the project team. Repository contributions can be reviewed on the [GitHub contributors page](https://github.com/Doancoso-phenikaa/ecommerce-recommendation-system/graphs/contributors).
-
-To contribute:
-
-1. Create a focused branch from the appropriate development branch.
-2. Keep changes within one feature or fix.
-3. Run the relevant lint, build and test commands.
-4. Open a pull request that explains behavior changes and verification performed.
-
-## License
-
-This repository does not currently include a root license file, and the backend package is marked `UNLICENSED`. No permission to use, modify or redistribute the project should be inferred until the maintainers add an explicit license.
